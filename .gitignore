@@ -1,0 +1,23 @@
+# Rust
+/target
+Cargo.lock
+
+# IDE
+.idea/
+.vscode/
+*.iml
+
+# macOS
+.DS_Store
+
+# Environment
+.env
+.env.local
+
+# Logs
+*.log
+
+# Test artifacts
+conformance.test
+test-config*.yaml
+*.pem
