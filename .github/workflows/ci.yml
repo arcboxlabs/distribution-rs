@@ -1,0 +1,76 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+
+env:
+  CARGO_TERM_COLOR: always
+  RUSTFLAGS: "-Dwarnings"
+
+jobs:
+  check:
+    name: Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+      - uses: Swatinem/rust-cache@v2
+      - name: Check formatting
+        run: cargo fmt --all -- --check
+      - name: Clippy
+        run: cargo clippy --all-targets --all-features
+      - name: Build
+        run: cargo build --all-targets
+      - name: Test
+        run: cargo test --all-targets
+
+  conformance:
+    name: OCI Conformance
+    runs-on: ubuntu-latest
+    needs: check
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Build release binary
+        run: cargo build --release
+
+      - name: Start registry
+        run: |
+          mkdir -p /tmp/registry-data/storage
+          ./target/release/distribution &
+          sleep 2
+          curl -sf http://localhost:5000/v2/ || (echo "Registry failed to start" && exit 1)
+        env:
+          RUST_LOG: info
+
+      - name: Install OCI conformance tool
+        run: |
+          go install github.com/opencontainers/distribution-spec/conformance/cmd/conformance@latest
+        env:
+          GOPATH: /home/runner/go
+
+      - name: Run OCI conformance tests
+        run: |
+          /home/runner/go/bin/conformance
+        env:
+          OCI_ROOT_URL: http://localhost:5000
+          OCI_NAMESPACE: conformance/test
+          OCI_TEST_PULL: "1"
+          OCI_TEST_PUSH: "1"
+          OCI_TEST_CONTENT_DISCOVERY: "1"
+          OCI_TEST_CONTENT_MANAGEMENT: "1"
+          OCI_HIDE_SKIPPED_WORKFLOWS: "0"
+          OCI_DEBUG: "0"
+
+      - name: Upload conformance report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: oci-conformance-report
+          path: report.html
